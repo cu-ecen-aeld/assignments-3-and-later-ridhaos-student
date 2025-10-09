@@ -1,9 +1,4 @@
 #include "systemcalls.h"
-#include <stdlib.h>
-#include <wait.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -55,8 +50,6 @@ bool do_exec(int count, ...)
     }
     command[count] = NULL;
 
-    fflush(stdout);
-
     pid_t pid = fork();
     if (pid < 0)    
     {
@@ -64,8 +57,18 @@ bool do_exec(int count, ...)
         return false;
     }else if (pid == 0)
     {
-        execv(command[0], command);
-        _exit(1);
+        int error = execv(command[0], command);
+        if (error == -1)
+        {
+            exit(-1);
+        }else if (errno)
+        {
+            exit(-1);
+        }else
+        {
+            exit(1);
+        }
+                
     }
         
 
@@ -108,36 +111,41 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         return false;
     }
 
-    int rtn = dup2(fd, STDOUT_FILENO);
-    if (rtn < 0)
-    {
-        va_end(args);
-        perror("Copy Fd ");
-        return false;
-    }
-    
-    close(fd);
-
-    int status;
-    pid_t pid;
-
-    fflush(stdout);
-
-    pid = fork();
+    pid_t pid = fork();
     if (pid < 0)    
     {
+        perror("fork"); 
         return false;
     }else if (pid == 0)
     {
-        execv(command[0], command);
-        exit(-1);
+        if (dup2(fd, 1) < 0) { 
+            perror("dup2"); _exit(-1);
+        }
+        close(fd);
+
+        int error = execv(command[0], command);
+        if (error == -1)
+        {
+            exit(-1);
+        }else if (errno)
+        {
+            exit(-1);
+        }else
+        {
+            exit(1);
+        }
     }
-        
-    va_end(args);
-
-
-    if (waitpid (pid, &status, 0) == -1)
-        return false;
     
-    return  WIFEXITED (status) & WEXITSTATUS (status);
+    int status = 0;
+    if (waitpid (pid, &status, 0) == -1)
+    {
+        va_end(args);
+        return false;
+    }
+    
+    va_end(args);
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status) == 0;
+    }else return false;
+
 }
