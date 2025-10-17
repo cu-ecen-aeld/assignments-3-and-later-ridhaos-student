@@ -38,9 +38,10 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     # TODO: Add your kernel build steps here
     make clean
     #make mrproper
-
-    make ARCH=$ARCH CROSS_COMILE=$CROSS_COMPILE  defconfig
-    make ARCH=$ARCH CROSS_COMILE=$CROSS_COMPILE
+    export ARCH
+    export CROSS_COMPILE
+    make defconfig
+    make
 
 fi
 
