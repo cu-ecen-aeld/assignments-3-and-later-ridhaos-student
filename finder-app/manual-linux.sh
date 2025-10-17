@@ -36,7 +36,7 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
-    #make clean
+    make clean
     #make mrproper
 
     make ARCH=$ARCH CROSS_COMILE=$CROSS_COMPILE  defconfig
