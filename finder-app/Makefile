@@ -4,6 +4,8 @@ SRCS = $(wildcard *.c)
 OBJS = $(SRCS:.c=.o)
 TARGET = writer
 
+all : $(TARGET)
+
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $^ -o $@
 
