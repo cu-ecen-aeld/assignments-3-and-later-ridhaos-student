@@ -82,10 +82,15 @@ int child_handler_recv(int sock_fd, int buffer_size)
 void child_handler_send(int sock_fd)
 {
     FILE * file = fopen(FILE_NAME, "r");
-    char ch;
+    if (file == NULL) {
+        perror("Open file for reading");
+        return;
+    }
+    int ch;
     printf("Read file\n");
     while ((ch = fgetc(file)) != EOF) {
-        send(sock_fd, &ch, 1, 0);
+        char send_char = (char)ch;
+        send(sock_fd, &send_char, 1, 0);
     }
     fclose(file);
 }
