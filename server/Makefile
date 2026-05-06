@@ -7,7 +7,7 @@ TARGET = aesdsocket
 all : $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

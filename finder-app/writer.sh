@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Usage: ./writer.sh <file_path> <string_to_write>
 
