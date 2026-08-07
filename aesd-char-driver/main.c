@@ -43,9 +43,6 @@ int aesd_open(struct inode *inode, struct file *filp)
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
-    /**
-     * TODO: handle release
-     */
     return 0;
 }
 
@@ -76,15 +73,15 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     // Step 4: if entry is NULL → goto out (retval=0 = EOF)
     if (!entry)
     {
-        retval = -ENOMEM;
+        retval = 0;
         goto out;
     }
     
     // Step 5: calculate bytes_to_copy using min()
-    size_t bytes_to_copy = min(count, entry->size - entry_offset);
+    bytes_to_copy = min(count, entry->size - entry_offset);
 
     // Step 6: copy_to_user from correct position
-    if(copy_to_user(buf, entry, bytes_to_copy)){
+    if(copy_to_user(buf, entry->buffptr+entry_offset, bytes_to_copy)){
         retval = -EFAULT;
         goto out;
     }
@@ -208,8 +205,7 @@ int aesd_init_module(void)
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
 
-
-    aesd_circular_buffer_init(&aesd_device.aesd_circular_buffer);
+    aesd_circular_buffer_init(&aesd_device.aesd_buffer);
     mutex_init(&aesd_device.lock);
     result = aesd_setup_cdev(&aesd_device);
 
@@ -223,8 +219,14 @@ int aesd_init_module(void)
 void aesd_cleanup_module(void)
 {
     dev_t devno = MKDEV(aesd_major, aesd_minor);
-
+    uint8_t index;
+    struct aesd_buffer_entry *entry;    
     cdev_del(&aesd_device.cdev);
+
+
+    AESD_CIRCULAR_BUFFER_FOREACH(entry,&aesd_device.aesd_buffer,index) {
+       kfree(entry->buffptr);
+    }
 
     unregister_chrdev_region(devno, 1);
 }

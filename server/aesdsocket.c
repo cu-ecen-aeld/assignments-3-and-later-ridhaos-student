@@ -18,9 +18,17 @@
 #include <pthread.h>
 #include <sys/stat.h>
 
+#define USE_AESD_CHAR_DEVICE    1
+
 #define PORT "9000"
 #define BACKLOG 10
+
+#if USE_AESD_CHAR_DEVICE == 1
+#define FILE_NAME "/dev/aesdchar"
+#else
 #define FILE_NAME "/var/tmp/aesdsocketdata"
+#endif
+
 #define RECV_BUF_SIZE 131072  // 128KB
 
 volatile sig_atomic_t stop_program = 0;
@@ -92,6 +100,7 @@ static int append_packet_to_file(const char *buf, size_t len)
     }
 
     int fd = open(FILE_NAME, O_WRONLY | O_CREAT | O_APPEND, 0644);
+
     if (fd == -1) {
         syslog(LOG_ERR, "open append file failed: %s", strerror(errno));
         pthread_mutex_unlock(&file_mutex);
@@ -116,57 +125,58 @@ static int append_packet_to_file(const char *buf, size_t len)
  */
 static char *read_entire_file(size_t *size_out)
 {
-    *size_out = 0;
-    struct stat st;
-    if (stat(FILE_NAME, &st) == -1) {
-        if (errno == ENOENT) {
-            return NULL; // file doesn't exist
-        }
-        syslog(LOG_ERR, "stat failed: %s", strerror(errno));
-        return NULL;
-    }
-    size_t fsize = (size_t)st.st_size;
-    if (fsize == 0) {
+    int fd;
+    ssize_t bytes_read;
+    size_t total = 0;
+    size_t capacity = 1024;
+    char *buffer;
+    char temp[1024];
+
+    fd = open(FILE_NAME, O_RDONLY);
+    if (fd < 0) {
+        perror("open");
         return NULL;
     }
 
-    char *buf = malloc(fsize);
-    if (!buf) {
-        syslog(LOG_ERR, "malloc failed for read_entire_file");
-        return NULL;
-    }
-
-    /* Ensure we read a consistent view: lock file mutex */
-    if (pthread_mutex_lock(&file_mutex) != 0) {
-        syslog(LOG_ERR, "pthread_mutex_lock file_mutex failed");
-        free(buf);
-        return NULL;
-    }
-
-    int fd = open(FILE_NAME, O_RDONLY);
-    if (fd == -1) {
-        syslog(LOG_ERR, "open for read failed: %s", strerror(errno));
-        pthread_mutex_unlock(&file_mutex);
-        free(buf);
-        return NULL;
-    }
-
-    ssize_t r = read(fd, buf, fsize);
-    if (r == -1 || (size_t)r != fsize) {
-        syslog(LOG_ERR, "read file failed: %s", strerror(errno));
+    buffer = malloc(capacity);
+    if (!buffer) {
         close(fd);
-        pthread_mutex_unlock(&file_mutex);
-        free(buf);
         return NULL;
+    }
+
+    while ((bytes_read = read(fd, temp, sizeof(temp))) > 0) {
+
+        /* Grow the buffer if needed */
+        if (total + bytes_read > capacity) {
+            while (total + bytes_read > capacity)
+                capacity *= 2;
+
+            char *new_buffer = realloc(buffer, capacity);
+            if (!new_buffer) {
+                free(buffer);
+                close(fd);
+                return NULL;
+            }
+            buffer = new_buffer;
+        }
+
+        memcpy(buffer + total, temp, bytes_read);
+        total += bytes_read;
     }
 
     close(fd);
-    pthread_mutex_unlock(&file_mutex);
 
-    *size_out = fsize;
-    return buf;
+    if (bytes_read < 0) {
+        perror("read");
+        free(buffer);
+        return NULL;
+    }
+
+    *size_out = total;
+    return buffer;
 }
 
+#if !USE_AESD_CHAR_DEVICE
 /* TimeStamp thread routine */
 void *timestamp_thread(void *arg)
 {
@@ -212,6 +222,7 @@ void *timestamp_thread(void *arg)
     }
     pthread_exit(NULL);
 }
+#endif
 
 /* Worker thread routine */
 static void *connection_handler(void *arg)
@@ -293,6 +304,12 @@ static void *connection_handler(void *arg)
     /* Read full file (while holding lock inside read_entire_file) */
     size_t file_size = 0;
     char *file_contents = read_entire_file(&file_size);
+
+    // if (data) {
+    //     send(client_fd, data, data_size, 0);
+    //     free(data);
+    // }
+
     if (file_contents && file_size > 0) {
         /* send file in loop until all bytes sent */
         size_t sent = 0;
@@ -386,7 +403,9 @@ int main(int argc, char *argv[])
     int yes = 1;
     struct sigaction sa;
     int daemon_mode = 0;
+#if !USE_AESD_CHAR_DEVICE
     pthread_t timestamp_tid;
+#endif
     int timestamp_started = 0;
 
     openlog(NULL, LOG_PID, LOG_USER);
@@ -474,9 +493,9 @@ int main(int argc, char *argv[])
     } else {
         printf("Server : Waiting for Connection on port %s ...\n", PORT);
     }
-
+#if !USE_AESD_CHAR_DEVICE
     pthread_create(&timestamp_tid, NULL, timestamp_thread, NULL);
-
+#endif
     /* Adjust receive buffer (optional) */
     int rcvbuf = RECV_BUF_SIZE;
     setsockopt(listen_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
@@ -534,7 +553,9 @@ int main(int argc, char *argv[])
         reap_finished_threads();
         
         if (!timestamp_started) {
+#if !USE_AESD_CHAR_DEVICE
             pthread_create(&timestamp_tid, NULL, timestamp_thread, NULL);
+#endif
             timestamp_started = 1;
         }
     }
@@ -564,7 +585,9 @@ int main(int argc, char *argv[])
 
     /* Remove data file */
     if (timestamp_started) {
+#if !USE_AESD_CHAR_DEVICE
         pthread_join(timestamp_tid, NULL);
+#endif
     }
 
     remove(FILE_NAME);
