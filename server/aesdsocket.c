@@ -500,7 +500,9 @@ int main(int argc, char *argv[])
     int rcvbuf = RECV_BUF_SIZE;
     setsockopt(listen_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 
+#if !USE_AESD_CHAR_DEVICE
     remove(FILE_NAME);
+#endif
 
     /* Accept loop */
     while (!stop_program) {

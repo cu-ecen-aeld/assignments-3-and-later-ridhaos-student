@@ -2,27 +2,53 @@
 module=aesdchar
 device=aesdchar
 mode="664"
-cd `dirname $0`
-set -e
-# Group: since distributions do it differently, look for wheel or use staff
+
+# Group: since distributions do it differently
 if grep -q '^staff:' /etc/group; then
     group="staff"
 else
     group="wheel"
 fi
 
-if [ -e ${module}.ko ]; then
-    echo "Loading local built file ${module}.ko"
-    insmod ./$module.ko $* || exit 1
-else
-    echo "Local file ${module}.ko not found, attempting to modprobe"
-    modprobe ${module} || exit 1
-fi
+case "$1" in
+    start)
+        echo "Loading ${module} driver"
 
-sleep 1
+        # load from known installed path
+        modprobe ${module} || exit 1
 
-major=$(awk "\$2==\"$module\" {print \$1}" /proc/devices)
-rm -f /dev/${device}
-mknod /dev/${device} c $major 0
-chgrp $group /dev/${device}
-chmod $mode  /dev/${device}
+        # wait for kernel to register device
+        sleep 1
+
+        # get major number from /proc/devices
+        major=$(awk "\$2==\"${module}\" {print \$1}" \
+                /proc/devices)
+
+        if [ -z "$major" ]; then
+            echo "ERROR: could not find major number"
+            exit 1
+        fi
+
+        echo "${module} major=${major}"
+
+        # create device node
+        rm -f /dev/${device}
+        mknod /dev/${device} c ${major} 0
+        chgrp ${group} /dev/${device}
+        chmod ${mode}  /dev/${device}
+
+        echo "Created /dev/${device}"
+        ;;
+
+    stop)
+        echo "Unloading ${module} driver"
+        rm -f /dev/${device}
+        rmmod ${module} || true
+        echo "Done"
+        ;;
+
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
